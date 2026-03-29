@@ -7,13 +7,13 @@ app = Flask(__name__)
 CORS(app)
 
 @app.route('/etisalat-social', methods=['POST'])
-def flag_api():
-    # سحب البيانات من الفورم (الويب)
-    number = request.form.get('number') # أضفنا خانة الرقم
-    email = request.form.get('phone')   # ده الإيميل في الـ HTML بتاعك
+def activate_social():
+    # سحب البيانات من صفحة الويب
+    number = request.form.get('number') # الرقم الجديد
+    email = request.form.get('phone')   # الإيميل
     password = request.form.get('password')
 
-    # --- نفس منطق السكربت الأصلي بالحرف ---
+    # --- منطق السكربت الأصلي بالحرف ---
     if "011" in number:
         num = number[1:]
     else:
@@ -24,7 +24,6 @@ def flag_api():
     auth = base64_bytes.decode("ascii")
     xauth = "Basic " + auth
 
-    # تسجيل الدخول (نفس الهيدرز والداتا بالظبط)
     urllog = "https://mab.etisalat.com.eg:11003/Saytar/rest/authentication/loginWithPlan"
     headerslog = {
         "applicationVersion": "2",
@@ -42,18 +41,19 @@ def flag_api():
         "Connection": "Keep-Alive",
         "User-Agent": "okhttp/5.0.0-alpha.11",
     }
+
     datalog = "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><loginRequest><deviceId></deviceId><firstLoginAttempt>true</firstLoginAttempt><modelType></modelType><osVersion></osVersion><platform>Android</platform><udid></udid></loginRequest>"
     
     try:
-        log = requests.post(urllog, headers=headerslog, data=datalog, timeout=15)
+        log = requests.post(urllog, headers=headerslog, data=datalog, timeout=20)
         
         if "true" in log.text:
             st = log.headers["Set-Cookie"]
             ck = st.split(";")[0]
             br = log.headers["auth"]
 
-            # طلب الهدية (نفس الهيدرز والداتا بالظبط)
             urlsub = "https://mab.etisalat.com.eg:11003/Saytar/rest/servicemanagement/submitOrderV2"
+            # استخدام الـ Social Gift كما في كودك الشغال
             datasub = "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><submitOrderRequest><mabOperation></mabOperation><msisdn>%s</msisdn><operation>REDEEM</operation><productName>DOWNLOAD_GIFT_1_SOCIAL_UNITS</productName></submitOrderRequest>" % (num)
 
             headerssub = {
@@ -75,7 +75,7 @@ def flag_api():
                 'User-Agent': 'okhttp/5.0.0-alpha.11',
             }
 
-            subs = requests.post(urlsub, headers=headerssub, data=datasub, timeout=15).text
+            subs = requests.post(urlsub, headers=headerssub, data=datasub, timeout=20).text
 
             if "true" in subs:
                 return jsonify({"status": "success", "message": "✅ تم تفعيل هديتك من اتصالات بنجاح ✅"})
@@ -83,8 +83,8 @@ def flag_api():
                 return jsonify({"status": "error", "message": "⚠️ البيانات غير صحيحة أو العرض متفعل بالفعل ⚠️"})
         else:
             return jsonify({"status": "error", "message": "❌ الرقم أو كلمة السر غير صحيحة ❌"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": "❌ حدث خطأ في الاتصال بالسيرفر ❌"})
+    except:
+        return jsonify({"status": "error", "message": "❌ فشل الاتصال بسيرفر اتصالات ❌"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
