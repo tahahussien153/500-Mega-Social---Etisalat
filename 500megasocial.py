@@ -1,89 +1,61 @@
-import base64
-import requests
-import xml.etree.ElementTree as ET
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests
+import base64
+import xml.etree.ElementTree as ET
 
 app = Flask(__name__)
-CORS(app)
+CORS(app) # لكي يسمح للمتصفح بالاتصال بالسيرفر
 
 @app.route('/etisalat-social', methods=['POST'])
-def activate_gift():
-    # سحب البيانات من الفورم في صفحة الويب
-    email = request.form.get('phone') # ده اسم الحقل في الـ HTML عندك
-    password = request.form.get('password')
-
-    if not email or not password:
-        return jsonify({"status": "error", "message": "❌ برجاء إدخال البيانات كاملة"})
-
-    # تحضير التوكن الأساسي (Base64)
-    auth_str = f"{email}:{password}"
-    token = base64.b64encode(auth_str.encode()).decode()
-
-    # الهيدرز المحدثة (المود الجديد)
-    headers = {
-        'Host': "mab.etisalat.com.eg:11003",
-        'User-Agent': "okhttp/5.0.0-alpha.11",
-        'Accept': "text/xml",
-        'Content-Type': "text/xml; charset=UTF-8",
-        'applicationVersion': "2",
-        'applicationName': "MAB",
-        'Authorization': f"Basic {token}",
-        'Language': "ar",
-        'APP-BuildNumber': "10650",
-        'APP-Version': "33.1.0",
-        'OS-Type': "Android",
-        'OS-Version': "13",
-        'APP-STORE': "GOOGLE"
-    }
-
-    # 1. طلب تسجيل الدخول لسحب رقم الهاتف (Dial)
-    login_url = "https://mab.etisalat.com.eg:11003/Saytar/rest/authentication/loginWithPlan"
-    login_xml = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-    <loginRequest>
-        <deviceId></deviceId><firstLoginAttempt>false</firstLoginAttempt>
-        <modelType></modelType><osVersion></osVersion>
-        <platform>Android</platform><udid></udid>
-    </loginRequest>"""
-
+def get_gift():
     try:
-        r_login = requests.post(login_url, data=login_xml, headers=headers, timeout=15)
-        
-        # تحليل الـ XML لسحب الرقم
-        root = ET.fromstring(r_login.text)
-        dial_element = root.find("dial")
-        
-        if dial_element is None:
-            return jsonify({"status": "error", "message": "❌ الإيميل أو كلمة السر غلط"})
-        
-        number = dial_element.text
+        # استقبال البيانات من الفورم
+        email = request.form.get('phone') # تم استخدام اسم phone بناءً على كود JS الخاص بك
+        password = request.form.get('password')
 
-        # 2. طلب تفعيل العرض الديناميكي (المود الجديد)
-        submit_url = "https://mab.etisalat.com.eg:11003/Saytar/rest/zero11/submitOrder"
-        submit_payload = f"""<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-        <submitOrderRequest>
-            <mabOperation></mabOperation>
-            <msisdn>{number}</msisdn>
-            <operation>ACTIVATE</operation>
-            <parameters>
-                <parameter>
-                    <name>GIFT_FULLFILMENT_PARAMETERS</name>
-                    <value>Offer_ID:23283;isRTIM:Y</value>
-                </parameter>
-            </parameters>
-            <productName>DYNAMIC_OFFERING_PAY_AND_GET_POOL_BONUS</productName>
-        </submitOrderRequest>"""
+        if not email or not password:
+            return jsonify({"status": "error", "message": "البريد أو كلمة السر ناقصة"}), 400
 
-        response = requests.post(submit_url, data=submit_payload, headers=headers, timeout=15)
+        # تجهيز التوكن
+        tok = f"{email}:{password}"
+        token = base64.b64encode(tok.encode()).decode()
+
+        headers = {
+            'Host': "mab.etisalat.com.eg:11003",
+            'User-Agent': "okhttp/5.0.0-alpha.11",
+            'Accept': "text/xml",
+            'Content-Type': "text/xml; charset=UTF-8",
+            'Authorization': f"Basic {token}",
+            'Language': "ar",
+            'OS-Type': "Android",
+        }
+
+        # مرحلة تسجيل الدخول لجلب الرقم
+        login_url = "https://mab.etisalat.com.eg:11003/Saytar/rest/authentication/loginWithPlan"
+        login_body = "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><loginRequest><platform>Android</platform></loginRequest>"
         
-        # فحص النتيجة النهائية
-        if "true" in response.text.lower():
-            return jsonify({"status": "success", "message": "✅ تم تفعيل الـ 500 وحدة بنجاح ✅"})
+        r_login = requests.post(login_url, data=login_body, headers=headers)
+        
+        try:
+            root = ET.fromstring(r_login.text)
+            number = root.find("dial").text
+        except:
+            return jsonify({"status": "error", "message": "خطأ في البريد أو كلمة السر"}), 401
+
+        # مرحلة تفعيل الهدية
+        gift_url = "https://mab.etisalat.com.eg:11003/Saytar/rest/servicemanagement/submitOrderV2"
+        gift_body = f"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><submitOrderRequest><msisdn>{number}</msisdn><operation>REDEEM</operation><productName>DOWNLOAD_GIFT_1_SOCIAL_UNITS</productName></submitOrderRequest>"
+        
+        r_gift = requests.post(gift_url, data=gift_body, headers=headers)
+
+        if "success" in r_gift.text.lower() or "0" in r_gift.text:
+            return jsonify({"status": "success", "message": "تم طلب الهدية بنجاح! انتظر رسالة التأكيد."})
         else:
-            return jsonify({"status": "error", "message": "⚠️ العرض غير متاح حالياً أو مفعل مسبقاً"})
+            return jsonify({"status": "error", "message": "العرض غير متاح حالياً أو تم استخدامه."})
 
     except Exception as e:
-        return jsonify({"status": "error", "message": "❌ حدث خطأ في الاتصال بالسيرفر"})
+        return jsonify({"status": "error", "message": "حدث خطأ فني بالسيرفر"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
